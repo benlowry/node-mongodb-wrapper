@@ -18,7 +18,6 @@ var databases = {
         port: 27017,
         name: "local2"
     }
-
 };
 
 /**
@@ -124,6 +123,7 @@ module.exports = db = {
      */
     setDatabases:function(dblist) {
         databases = dblist;
+		configureDatabases();
     },
 
     /**
@@ -546,3 +546,102 @@ for(var databasename in databases) {
         });
     }
 }
+
+/*
+ * Creates the shorthand references to databases and provides methods
+ * for including shorthand collection paths too.  You don't need to call
+ * this manually, it will automatically apply to the locally defined
+ * list of databases, or run again if you pass your own configuration.
+ */
+function configureDatabases() {
+
+    for(var databasename in databases) {
+        console.log(databasename);
+        var dbn = databases[databasename].name;
+        db[dbn] = databases[databasename];
+        db[dbn].dbn = dbn;
+
+        /**
+         * Initializes a single collection's shorthand
+         * @param cdn the collection name
+         */
+        db[dbn].collection = function(cdn) {
+
+            var ddbn = this.dbn;
+
+            if(db[this.dbn][cdn]) {
+                return;
+            }
+
+            db[ddbn][cdn] = {};
+            db[ddbn][cdn].cdn = cdn;
+            db[ddbn][cdn].dbn = ddbn;
+            db[ddbn][cdn].get = function(options, callback) { db.get(this.dbn, this.cdn, options, callback); }
+            db[ddbn][cdn].getOrInsert = function(options, callback) { db.getOrInsert(this.dbn, this.cdn, options, callback); }
+            db[ddbn][cdn].getAndCount = function(options, callback) { db.getAndCount(this.dbn, this.cdn, options, callback); }
+            db[ddbn][cdn].count = function(options, callback) { db.count(this.dbn, this.cdn, options, callback); }
+            db[ddbn][cdn].move = function(collection2name, options, callback) { db.move(this.dbn, this.cdn, collection2name, options, callback); }
+            db[ddbn][cdn].update = function(options, callback) { db.update(this.dbn, this.cdn, options, callback) };
+            db[ddbn][cdn].insert = function(options, callback) { db.insert(this.dbn, this.cdn, options, callback) };
+            db[ddbn][cdn].remove = function(options, callback) { db.remove(this.dbn, this.cdn, options, callback); }
+        };
+
+        /**
+         * Initializes the collection shorthand on a database
+         * @param opt either an array of collection names or a callback method(error) for
+         * loading directly from the db
+         */
+        db[dbn].collections = function(opt) {
+
+            var callback;
+
+            if(opt) {
+
+                if(typeof opt === 'function') {
+                    callback = opt;
+                } else {
+                    for(var i=0; i<opt.length; i++) {
+                        this.collection(opt[i]);
+                    }
+
+                    return;
+                }
+            }
+
+            var ddbn = this.dbn;
+            getConnection(ddbn, "", "", function(error, collection, connection) {
+
+                if(error) {
+                    callback(error);
+                    return;
+                }
+
+                connection.collectionNames({namesOnly: true}, function(error, names) {
+
+                    if(error) {
+                        callback(error);
+                        return;
+                    }
+
+                    for(var i=0; i<names.length; i++) {
+
+                        var name = names[i];
+
+                        if(name.indexOf(ddbn + ".system.") == 0)
+                            continue;
+
+                        var dcdn = name.substring(ddbn.length + 1);
+
+                        db[ddbn].collection(dcdn);
+                    }
+
+                    connection.close();
+                    connection = null;
+                    callback(null);
+                });
+            });
+        }
+    }
+}
+
+configureDatabases();
