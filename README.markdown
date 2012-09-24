@@ -37,8 +37,14 @@ Node MongoDB Wrapper provides methods for:
 
 A complete suite of examples is available in the included test.js file.
 
-	db.get("local", "stuff", {filter: {x: 1, y: 2, z: 3}, cache: true, cachetime: 60}, function(error, items) {
+	db.get("test", "stuff", {filter: {x: 1, y: 2, z: 3}, cache: true, cachetime: 60}, function(error, items) {
 	    console.log("huzzah!");
+	});
+	
+or (see shorthand note below)
+	
+	db.test.stuff.get({filter: {x: 1, y: 2, z: 3}, cache: true, cachetime: 60}, function(error, items) {
+		 console.log("huzzah!");
 	});
 	
 In that short example "local" is one of our configured databases:
