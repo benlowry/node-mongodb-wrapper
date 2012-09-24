@@ -24,14 +24,14 @@ or just ```npm install node-mongo-wrapper```
 
 Node MongoDB Wrapper provides methods for:
 
-1. get
-2. getAndCount
-3. getOrInsert
-4. count
-5. insert
-6. update
-7. move
-8. remove
+1. ```get``` performs a find() with optional caching
+2. ```getAndCount``` performs a find() + count() with optional caching
+3. ```getOrInsert``` performs a find() and inserts if not exists
+4. ```count``` performs a count() with optional caching
+5. ```insert``` performs a save()
+6. ```update``` performs an update()
+7. ```move``` performs a save(doc) on new collection then remove(doc) on old
+8. ```remove``` performs a remove() 
 
 ## Examples
 
