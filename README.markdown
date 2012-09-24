@@ -65,7 +65,7 @@ We're passing an object that contains a nested filter object which is the query 
 
 I saw this on [mongode](https://npmjs.org/package/mongode) and thought it looked super cool, so I copied the idea.
 
-You can use traditional db.databanasename.collectionname.method as well now to save on the parameter overload.  This also has the benefit of making sure your collection names are strict.
+You can use traditional db.databasename.collectionname.method as well now to save on the parameter overload.  This also has the benefit of making sure your collection names are strict.
 
 The only bad bit is you have to predefine the collection names because JavaScript has no 'catch all' property which is unfortunate, but you can do it in 3 ways and if a collection is already defined it will just skip doing it again.
 
