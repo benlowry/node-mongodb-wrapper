@@ -47,7 +47,7 @@ or (see shorthand note below)
 		 console.log("huzzah!");
 	});
 	
-In that short example "local" is one of our configured databases:
+In that short example "test" is one of our configured database's names:
 
 	var databases = {
 	    test: {
