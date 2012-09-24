@@ -44,17 +44,32 @@ A complete suite of examples is available in the included test.js file.
 In that short example "local" is one of our configured databases:
 
 	var databases = {
-	    local: {
+	    test: {
 	        address: "127.0.0.1",
 	        port: 27017,
-	        name: "test",
+	        name: "test", // your db and this object's name must match
 			//username: "optional",
 			//password: "optional"
 	    }
 	}
  
 We're passing an object that contains a nested filter object which is the query criteria and is exactly as you would use directly, it also supports limit, sort and skip in the outer object.  The query is marked as cacheable and will store the results for 60 seconds.
+
+## Shorthand
+
+I saw this on [mongode](https://npmjs.org/package/mongode) and thought it looked super cool, so I copied the idea.
+
+You can use traditional db.databanasename.collectionname.method as well now to save on the parameter overload.  This also has the benefit of making sure your collection names are strict.
+
+The only bad bit is you have to predefine the collection names because JavaScript has no 'catch all' property which is unfortunate, but you can do it in 3 ways and if a collection is already defined it will just skip doing it again.
+
+	db.databasename.collection("acollection");
+	db.databasename.collections(["an", "array", "of", "collections"]);
+	db.databasename.collections(callback);
 	
+The final example will query your database and create the shorthand path for any collection names without dots (eg no system.indexes).
+
+The callback has only an error parameter so you know if it worked or not, this is an async operation and you cannot use the shorthand until it is complete.	
 
 ## Why 
 
