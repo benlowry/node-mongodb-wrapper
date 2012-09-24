@@ -116,6 +116,15 @@ function killConnection(databasename, collectionname, operation) {
 }
 
 module.exports = db = {
+	
+    /**
+     * Import your own connections collection
+	 *
+     * @param dblist Your databases:  { db1: { address: "", port: , name: "db1" }, ... }
+     */
+    setDatabases:function(dblist) {
+        databases = dblist;
+    },
 
     /**
      * Inserts an object into a collection.
@@ -504,8 +513,7 @@ for(var databasename in databases) {
         }
 
         var ddbn = this.dbn;
-
-        var connection = getConnection(ddbn, "", "", function(error, collection, connection) {
+		getConnection(ddbn, "", "", function(error, collection, connection) {
 
             if(error) {
                 callback(error);

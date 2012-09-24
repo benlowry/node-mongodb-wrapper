@@ -77,6 +77,10 @@ The final example will query your database and create the shorthand path for any
 
 The callback has only an error parameter so you know if it worked or not, this is an async operation and you cannot use the shorthand until it is complete.	
 
+## Databases
+
+You can either define your databases inside the included mongo-wrapper.js or pass a same-structured object as above via ```db.setDatabases(dblist)```.
+
 ## Why 
 
 Because without this you end up with too much boilerplate and nesting:
