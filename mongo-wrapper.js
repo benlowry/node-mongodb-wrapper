@@ -458,17 +458,15 @@ for(var databasename in databases) {
     db[dbn].collection = function(cdn) {
 
         var ddbn = this.dbn;
-        trace(ddbn + "." + cdn);
 
         if(db[this.dbn][cdn]) {
-            trace("already set up");
             return;
         }
 
         db[ddbn][cdn] = {};
         db[ddbn][cdn].cdn = cdn;
         db[ddbn][cdn].dbn = ddbn;
-        db[ddbn][cdn].get = function(options, callback) { trace("hello: " + this.dbn + "." + this.cdn); db.get(this.dbn, this.cdn, options, callback); }
+        db[ddbn][cdn].get = function(options, callback) { db.get(this.dbn, this.cdn, options, callback); }
         db[ddbn][cdn].getOrInsert = function(options, callback) { db.getOrInsert(this.dbn, this.cdn, options, callback); }
         db[ddbn][cdn].getAndCount = function(options, callback) { db.getAndCount(this.dbn, this.cdn, options, callback); }
         db[ddbn][cdn].count = function(options, callback) { db.count(this.dbn, this.cdn, options, callback); }
@@ -478,14 +476,21 @@ for(var databasename in databases) {
         db[ddbn][cdn].remove = function(options, callback) { db.remove(this.dbn, this.cdn, options, callback); }
     };;
 
-    db[dbn].collections = function(arr) {
+    db[dbn].collections = function(opt) {
 
-        if(arr) {
-            for(var i=0; i<arr.length; i++) {
-                this.collection(arr[i]);
+        var callback;
+
+        if(opt) {
+
+            if(typeof opt === 'function') {
+                callback = opt;
+            } else {
+                for(var i=0; i<opt.length; i++) {
+                    this.collection(opt[i]);
+                }
+
+                return;
             }
-
-            return;
         }
 
         var ddbn = this.dbn;
@@ -493,10 +498,16 @@ for(var databasename in databases) {
         var connection = getConnection(ddbn, "", "", function(error, collection, connection) {
 
             if(error) {
-
+                callback(error);
+                return;
             }
 
             connection.collectionNames({namesOnly: true}, function(error, names) {
+
+                if(error) {
+                    callback(error);
+                    return;
+                }
 
                 for(var i=0; i<names.length; i++) {
 
@@ -512,6 +523,7 @@ for(var databasename in databases) {
 
                 connection.close();
                 connection = null;
+                callback(null);
             });
         });
     }
