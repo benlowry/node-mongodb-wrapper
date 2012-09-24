@@ -1,1 +1,1 @@
-var exports = require("./mongo-wrapper.js");
+module.exports = require("./mongo-wrapper.js");
