@@ -455,6 +455,11 @@ for(var databasename in databases) {
     var dbn = databases[databasename].name;
     db[dbn] = databases[databasename];
     db[dbn].dbn = dbn;
+
+    /**
+     * Initializes a single collection's shorthand
+     * @param cdn the collection name
+     */
     db[dbn].collection = function(cdn) {
 
         var ddbn = this.dbn;
@@ -474,8 +479,13 @@ for(var databasename in databases) {
         db[ddbn][cdn].update = function(options, callback) { db.update(this.dbn, this.cdn, options, callback) };
         db[ddbn][cdn].insert = function(options, callback) { db.insert(this.dbn, this.cdn, options, callback) };
         db[ddbn][cdn].remove = function(options, callback) { db.remove(this.dbn, this.cdn, options, callback); }
-    };;
+    };
 
+    /**
+     * Initializes the collection shorthand on a database
+     * @param opt either an array of collection names or a callback method(error) for
+     * loading directly from the db
+     */
     db[dbn].collections = function(opt) {
 
         var callback;
