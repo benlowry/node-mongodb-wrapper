@@ -46,9 +46,20 @@ Because without this you end up with too much boilerplate and nesting:
 
 	var db = new Db("test", new Server("127.0.0.1", 27017));
 	db.open(function(error, connection) {
-	    connection.authenticate(database.username, database.password, function(error) {
+		
+		if(error) {
+			console.log("error: " + error);
+			return;
+		}
+		
+	    connection.authenticate(username,.password, function(error) {
 	        var collection = new mongodb.Collection(connection, "stuff");
 	        collection.find({x: 1, y: 2, z: 3}, function(error, items) {
+				
+				if(error) {
+					console.log("error2: " + error);
+					return;
+				}
 	            console.log("huzzah!");
 	        });
 	    });
