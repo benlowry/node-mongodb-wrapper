@@ -1,4 +1,7 @@
 var db = require("./mongo-wrapper.js");
+db.cacheEnabled = true;
+db.poolEnabled = true;
+db.poolLimit = 20;
 
 // set our db's
 db.setDatabases({
@@ -13,7 +16,6 @@ db.test.collections(["stuff", "stuff2"]);
 db.test.collections(function(error) {
    console.log("collections loaded? " + (error == null) + " (error: " + error + ")");;
 });
-
 
 // querying with basic caching
 var get1  = {filter: {size: {$gte: 1000}}, cache: true, cachetime: 60};
