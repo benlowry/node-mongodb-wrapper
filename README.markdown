@@ -51,7 +51,7 @@ In that short example "local" is one of our configured databases:
 	    }
 	}
  
-We're passing an object that contains a nested filter object which is the query criteria and is exactly as you would use directly, it also supports limit, sort and skipping.  The query is marked as cachaeable and will store the results for 60 seconds.
+We're passing an object that contains a nested filter object which is the query criteria and is exactly as you would use directly, it also supports limit, sort and skip in the outer object.  The query is marked as cacheaable and will store the results for 60 seconds.
 	
 
 ## Why 
@@ -85,3 +85,11 @@ Because without this you end up with too much boilerplate and nesting:
 	        });
 	    });
 	});
+	
+### What's missing
+There's one feature that would be great to have that I haven't built in and that is sending a batch of operations in to be processed in the single request.  This could remove code complexity even further although with the connection re-use there may not be much performance gain.
+	
+
+### License
+
+Copyright [Playtomic Inc](https://playtomic.com), 2012.  Licensed under the MIT license.  Certain portions may come from 3rd parties and carry their own licensing terms and are referenced where applicable.
