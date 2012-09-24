@@ -18,7 +18,7 @@ This is in use in production at [Playtomic](https://playtomic.com/) as part of t
 2. cd node-mongodb-wrapper
 3. node test.js
 
-or '''npm install node-mongo-wrapper'''
+or just ```npm install node-mongo-wrapper```
 
 ## Methods
 
