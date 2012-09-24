@@ -39,12 +39,26 @@ A complete suite of examples is available in the included test.js file.
 	    console.log("huzzah!");
 	});
 	
+In that short example "local" is one of our configured databases:
+
+	var databases = {
+	    local: {
+	        address: "127.0.0.1",
+	        port: 27017,
+	        name: "test",
+			//username: "optional",
+			//password: "optional"
+	    }
+	}
+ 
+We're passing an object that contains a nested filter object which is the query criteria and is exactly as you would use directly, it also supports limit, sort and skipping.  The query is marked as cachaeable and will store the results for 60 seconds.
+	
 
 ## Why 
 
 Because without this you end up with too much boilerplate and nesting:
 
-	var db = new Db("test", new Server("127.0.0.1", 27017));
+	var db = new Db("local", new Server("127.0.0.1", 27017));
 	db.open(function(error, connection) {
 		
 		if(error) {
