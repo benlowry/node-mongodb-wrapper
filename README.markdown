@@ -79,6 +79,16 @@ The callback has only an error parameter so you know if it worked or not, this i
 
 You can either define your databases inside the included mongo-wrapper.js or pass a same-structured object as above via ```db.setDatabases(dblist)```.
 
+## Configuration
+You can enable or disable some functionality:
+
+	var db = require("node-mongodb-wrapper");
+	db.cacheEnabled = true;
+	db.defaultCacheTime = 60;
+	db.poolEnabled = true;
+	db.poolLimit = 20;
+
+
 ## Why 
 
 Because without this you end up with too much boilerplate and nesting:
