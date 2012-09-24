@@ -52,14 +52,21 @@ Because without this you end up with too much boilerplate and nesting:
 			return;
 		}
 		
-	    connection.authenticate(username,.password, function(error) {
+	    connection.authenticate(username, password, function(error) {
+			
+			if(error) {
+				console.log("error2: " + error);
+				return;
+			}
+			
 	        var collection = new mongodb.Collection(connection, "stuff");
 	        collection.find({x: 1, y: 2, z: 3}, function(error, items) {
 				
 				if(error) {
-					console.log("error2: " + error);
+					console.log("error3: " + error);
 					return;
 				}
+				
 	            console.log("huzzah!");
 	        });
 	    });
