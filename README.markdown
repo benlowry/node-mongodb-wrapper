@@ -2,11 +2,11 @@
 
 This package greatly simplifies working with [MongoDB](http://mongodb.org/) and [Node MongoDB Native](https://github.com/mongodb/node-mongodb-native).
 
-It removes a lot of the callback madness and provides a simple shorthand for common operations.
-
-It also localizes your db configuration within itself so you only specify a name rather than a multitude of properties and has its own very simple connection pooling and caching.
+It removes a lot of the callback madness and provides a simple shorthand for common operations.  It also localizes your db configuration within itself so you only specify a name rather than a multitude of properties and has its own very simple connection pooling and caching.
 
 All of these features can be removed or replaced easily.
+
+This is in use in production at [Playtomic](https://playtomic.com/) as part of the high-volume [api server](https://success.heroku.com/playtomic).
 
 ## Requires
 
