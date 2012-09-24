@@ -18,6 +18,8 @@ This is in use in production at [Playtomic](https://playtomic.com/) as part of t
 2. cd node-mongodb-wrapper
 3. node test.js
 
+or '''npm install node-mongo-wrapper'''
+
 ## Methods
 
 Node MongoDB Wrapper provides methods for:
@@ -51,7 +53,7 @@ In that short example "local" is one of our configured databases:
 	    }
 	}
  
-We're passing an object that contains a nested filter object which is the query criteria and is exactly as you would use directly, it also supports limit, sort and skip in the outer object.  The query is marked as cacheaable and will store the results for 60 seconds.
+We're passing an object that contains a nested filter object which is the query criteria and is exactly as you would use directly, it also supports limit, sort and skip in the outer object.  The query is marked as cacheable and will store the results for 60 seconds.
 	
 
 ## Why 
