@@ -8,19 +8,18 @@ var mongodb = require("mongodb"),
  * like:  mdb.get("local", "mystuff", ....
  */
 var databases = {
-    local: {
+    test: {
         address: "127.0.0.1",
         port: 27017,
         name: "test"
     },
-    elsewhere: {
-        address: "123.123.123.123",
-        port: 12345,
-        username: "username",
-        password: "password",
-        name: "dbname"
+    local2: {
+        address: "127.0.0.1",
+        port: 27017,
+        name: "local2"
     }
-}
+
+};
 
 /**
  * Helper functions
@@ -74,7 +73,7 @@ function getConnection(databasename, collectionname, operation, callback) {
 
         if(!database.username && !database.password) {
             connections[key] = connection;
-            callback(null, new mongodb.Collection(connection, collectionname));
+            callback(null, collectionname ? new mongodb.Collection(connection, collectionname) : null, connection);
             return;
         }
 
@@ -91,7 +90,7 @@ function getConnection(databasename, collectionname, operation, callback) {
             }
 
             connections[key] = connection;
-            callback(null, new mongodb.Collection(connection, collectionname));
+            callback(null, collectionname ? new mongodb.Collection(connection, collectionname) : null, connection);
         });
     });
 }
@@ -164,7 +163,7 @@ module.exports = db = {
                 }
 
                 if(error) {
-					trace("update error: " + error);
+                    trace("update error: " + error);
                     killConnection(database, collectionname, "update");
                 }
             });
@@ -205,7 +204,7 @@ module.exports = db = {
                     callback(error, items || []);
                 }
             });
-            
+
         });
     },
 
@@ -220,15 +219,15 @@ module.exports = db = {
     getOrInsert: function(database, collectionname, options, callback) {
 
         getConnection(database, collectionname, "getOrInsert", function(error, collection) {
-          
+
             collection.find(options.filter).limit(1).toArray(function (error, items) {
-    
+
                 if (error) {
-                    
+
                     if(callback) {
                         callback(error, []);
                     }
-                    
+
 					trace("getOrInsert error: " + error);
                     killConnection(database, collectionname, "getOrInsert");
                     return;
@@ -269,9 +268,9 @@ module.exports = db = {
      * @param callback Your callback method(error, items, numitems)
      */
     getAndCount: function(database, collectionname, options, callback) {
-        
+
         getConnection(database, collectionname, "getAndCount", function(error, collection) {
-            
+
             if(error) {
 
                 if(callback) {
@@ -291,7 +290,7 @@ module.exports = db = {
                     return;
                 }
             }
-    
+
             collection.find(options.filter || {}).limit(options.limit || 0).skip(options.skip || 0).sort(options.sort || {}).toArray(function (error, items) {
 
                 if (error) {
@@ -308,7 +307,7 @@ module.exports = db = {
                 // note we could use the api here but it would potentially
                 // establish a second connection and change the cache key
                 collection.count(options.filter, function(error, numitems) {
-    
+
                     if (error) {
 
                         if(callback) {
@@ -352,7 +351,7 @@ module.exports = db = {
                     return;
                 }
             }
-            
+
             collection.count(options.filter, function (error, numitems) {
 
                 if (error) {
@@ -361,7 +360,7 @@ module.exports = db = {
                     }
 
                     trace("count error: " + error);
-                    killConnection(database, collectionname, "count");                 
+                    killConnection(database, collectionname, "count");
                     return;
                 }
 
@@ -447,3 +446,73 @@ setInterval(function() {
     }
 
 }, 1000);
+
+/*
+ * Shorthand access to functions via db and collections
+ */
+for(var databasename in databases) {
+    console.log(databasename);
+    var dbn = databases[databasename].name;
+    db[dbn] = databases[databasename];
+    db[dbn].dbn = dbn;
+    db[dbn].collection = function(cdn) {
+
+        var ddbn = this.dbn;
+        trace(ddbn + "." + cdn);
+
+        if(db[this.dbn][cdn]) {
+            trace("already set up");
+            return;
+        }
+
+        db[ddbn][cdn] = {};
+        db[ddbn][cdn].cdn = cdn;
+        db[ddbn][cdn].dbn = ddbn;
+        db[ddbn][cdn].get = function(options, callback) { trace("hello: " + this.dbn + "." + this.cdn); db.get(this.dbn, this.cdn, options, callback); }
+        db[ddbn][cdn].getOrInsert = function(options, callback) { db.getOrInsert(this.dbn, this.cdn, options, callback); }
+        db[ddbn][cdn].getAndCount = function(options, callback) { db.getAndCount(this.dbn, this.cdn, options, callback); }
+        db[ddbn][cdn].count = function(options, callback) { db.count(this.dbn, this.cdn, options, callback); }
+        db[ddbn][cdn].move = function(collection2name, options, callback) { db.move(this.dbn, this.cdn, collection2name, options, callback); }
+        db[ddbn][cdn].update = function(options, callback) { db.update(this.dbn, this.cdn, options, callback) };
+        db[ddbn][cdn].insert = function(options, callback) { db.insert(this.dbn, this.cdn, options, callback) };
+        db[ddbn][cdn].remove = function(options, callback) { db.remove(this.dbn, this.cdn, options, callback); }
+    };;
+
+    db[dbn].collections = function(arr) {
+
+        if(arr) {
+            for(var i=0; i<arr.length; i++) {
+                this.collection(arr[i]);
+            }
+
+            return;
+        }
+
+        var ddbn = this.dbn;
+
+        var connection = getConnection(ddbn, "", "", function(error, collection, connection) {
+
+            if(error) {
+
+            }
+
+            connection.collectionNames({namesOnly: true}, function(error, names) {
+
+                for(var i=0; i<names.length; i++) {
+
+                    var name = names[i];
+
+                    if(name.indexOf(ddbn + ".system.") == 0)
+                        continue;
+
+                    var dcdn = name.substring(ddbn.length + 1);
+
+                    db[ddbn].collection(dcdn);
+                }
+
+                connection.close();
+                connection = null;
+            });
+        });
+    }
+}
