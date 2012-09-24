@@ -35,16 +35,16 @@ Node MongoDB Wrapper provides methods for:
 
 A complete suite of examples is available in the included test.js file.
 
-	```db.get("local", "stuff", {filter: {x: 1, y: 2, z: 3}, cache: true, cachetime: 60}, function(error, items) {
+	db.get("local", "stuff", {filter: {x: 1, y: 2, z: 3}, cache: true, cachetime: 60}, function(error, items) {
 	    console.log("huzzah!");
-	});```
+	});
 	
 
 ## Why 
 
 Because without this you end up with too much boilerplate and nesting:
 
-	```var db = new Db("test", new Server("127.0.0.1", 27017));
+	var db = new Db("test", new Server("127.0.0.1", 27017));
 	db.open(function(error, connection) {
 	    connection.authenticate(database.username, database.password, function(error) {
 	        var collection = new mongodb.Collection(connection, "stuff");
@@ -52,4 +52,4 @@ Because without this you end up with too much boilerplate and nesting:
 	            console.log("huzzah!");
 	        });
 	    });
-	});```
+	});
