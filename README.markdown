@@ -4,7 +4,7 @@ This package greatly simplifies working with [MongoDB](http://mongodb.org/) and 
 
 It removes a lot of the callback madness and provides a simple shorthand for common operations.  This is in use in production at [Playtomic](https://playtomic.com/) as part of the high-volume [api server](https://success.heroku.com/playtomic).
 
-It has a rudimentary caching and connection pooling layer that can greatly minimize round trips to the database without introducing 3rd party dependencies, although both the cache and the pool are thread-specific so multiple instances/workers/whatever will each have their own.
+It has a rudimentary caching and connection pooling layer that can greatly minimize round trips to the database without introducing 3rd party dependencies, although both the cache and the pool are thread-specific so multiple instances/workers/whatever will each have their own.  The connection pooling force-kills connections after a while to make sure they really do get terminated.
 
 ## Requires
 
@@ -83,11 +83,20 @@ You can either define your databases inside the included mongo-wrapper.js or pas
 You can enable or disable some functionality:
 
 	var db = require("node-mongodb-wrapper");
+	
+	// caching lets you store  results from get, getAndCount, count ops
 	db.cacheEnabled = true;
 	db.defaultCacheTime = 60;
+	
+	// pooling stores connections to be reused
 	db.poolEnabled = true;
 	db.poolLimit = 20;
-
+	
+	/*
+	Killing makes sure connections end up terminated.  I haven't figured out where yet but orphanned connections are not fun, so upon creation they're stored in an array now and each time they're used they have a timer reset, after which if they're still in use the timer will reset again the first time online or if they are not in use they'll be destroyed.
+	*/	
+	db.killEnabled = true;
+	db.expireConnection = 30;
 
 ## Why 
 
@@ -120,10 +129,6 @@ Because without this you end up with too much boilerplate and nesting:
 	        });
 	    });
 	});
-	
-### What's missing
-There's one feature that would be great to have that I haven't built in and that is sending a batch of operations in to be processed in the single request.  This could remove code complexity even further although with the connection re-use there may not be much performance gain.
-	
 
 ### License
 

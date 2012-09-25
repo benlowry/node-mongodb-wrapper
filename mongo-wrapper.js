@@ -1,11 +1,12 @@
 var mongodb = require("mongodb"),
     localcache = {},
     connections = {},
-	debug = process.env.trace || false;
+    allconnections = [],
+    debug = process.env.debug || false;
 
 /**
  * Database configurations, this way your api calls are more simple
- * like:  mdb.get("local", "mystuff", ....
+ * like:  db.get("local", "mystuff", ....
  */
 var databases = {
     test: {
@@ -24,13 +25,103 @@ var databases = {
  * Helper functions
  */
 function trace(message) {
-	
-	if(!trace) {
-		return;
-	}
-		
-	console.log("mongowrapper: " + message);
+
+    if(!trace) {
+        return;
+    }
+
+    console.log("mongowrapper: " + message);
 }
+
+/**
+ * Terminates a connection.
+ * @param connection The collection name
+ * @param db The database client
+ */
+function killConnection(cnn, error) {
+
+    cnn.inuse = false;
+
+    // disposed of after we terminated it
+    if(!cnn.connection || !cnn.db) {
+        cnn = null;
+        return;
+    }
+
+    if(!error && module.exports.poolEnabled && cnn.db && cnn.connection) {
+
+        var database = databases[cnn.databasename];
+
+        if(!database.pool) {
+            cnn.expire = 30;
+            database.pool = [cnn];
+            return;
+        }
+
+        if(database.pool.length < module.exports.poolSize) {
+            cnn.expire = 30;
+            database.pool.push(cnn);
+            return;
+        }
+    }
+
+    cnn.connection.close();
+    cnn.db.close();
+    cnn.connection = null;
+    cnn.db = null;
+    delete(cnn.connection);
+    delete(cnn.db);
+    cnn = null;
+    return;
+}
+
+/**
+ * Pool cleaning
+ */
+setInterval(function() {
+
+    if(!module.exports.poolEnabled && !module.exports.killEnabled)
+        return;
+
+    for(var i=allconnections.length - 1; i>-1; i--) {
+
+        var cnn = allconnections[i];
+        cnn.expire--;
+
+        if(cnn.expire > 0) {
+            continue;
+        }
+
+        if(cnn.inuse) {
+            cnn.inuse = false;
+            cnn.expire = module.exports.expireConnection;
+            continue;
+        }
+
+        // remove from global pool
+        allconnections.splice(i, 1);
+
+        // remove from database pool
+        var db = databases[cnn.databasename];
+
+        if(db.pool && db.pool.length) {
+            var dbp = db.pool.indexOf(cnn);
+
+            if(dbp > -1) {
+                db.pool.splice(dbp, 1);
+            }
+        }
+
+        // close it
+        cnn.connection.close();
+        cnn.connection = null;
+        cnn.db.close();
+        cnn.db = null;
+        delete(cnn.connection);
+        delete(cnn.db);
+        cnn = null;
+    }
+}, 1000);
 
 /**
  * Nice and simple persistant connections.  If your application runs on
@@ -43,45 +134,46 @@ function trace(message) {
  * @param callback The callback function
  */
 function getConnection(databasename, collectionname, operation, callback) {
-	
-	// it may be empty because of a collection lookup
-	if(module.exports.poolEnabled && collectionname && connections[databasename] && connections[databasename].length) {
-		var connection = connections[databasename].pop();
-		
-		if(connection.state == "disconnected") {
-			trace("reopening pooled connection");
-			connection.open();
-			connections[databasename].push(connection);
-		}
-		
-		if(connection.state == "connected") {
-			callback(null, new mongodb.Collection(connection, collectionname), connection);
-			return;
-		} else {
-			trace("pooled connection is " + connection.state);
-		}
-	}
-	
-	var database = databases[databasename];
 
-    var db = new mongodb.Db(database.name, new mongodb.Server(database.address, database.port));
+    var database = databases[databasename];
+
+    if(module.exports.poolEnabled && database.pool && database.pool.length) {
+
+        var cnn = database.pool.pop();
+
+        if(cnn.connection.state == "connected") {
+            cnn.expire = module.exports.expireConnection;
+            cnn.inuse = true;
+            callback(null, collectionname ? new mongodb.Collection(cnn.connection, collectionname) : null, cnn);
+            return;
+        } else {
+           killConnection(cnn, false);
+        }
+    }
+
+    var options = {
+        slave_ok: true
+    };
+
+    var db = new mongodb.Db(database.name, new mongodb.Server(database.address, database.port, options));
     db.open(function (error, connection) {
-		
+
+        var cnn = {connection: connection, db: db, databasename: databasename, expire: module.exports.expireConnection, inuse: true};
+
+        if(module.exports.killEnabled) {
+            allconnections.push(cnn);
+        }
+
         if(error) {
-			
             trace("connection failed to " + databasename + ": "+ error);
             getConnection(databasename, collectionname, operation, callback);
-
-            if(connection && connection.close) {
-                connection.close();
-                connection = null;
-            }
-			
+            killConnection(cnn, error);
             return;
         }
 
         if(!database.username && !database.password) {
-            callback(null, collectionname ? new mongodb.Collection(connection, collectionname) : null, connection);
+
+            callback(null, collectionname ? new mongodb.Collection(connection, collectionname) : null, cnn);
             return;
         }
 
@@ -90,77 +182,41 @@ function getConnection(databasename, collectionname, operation, callback) {
             if(error) {
                 trace("unable to authenticate to " + database.name + " with " + database.username + " / " + database.password);
                 getConnection(databasename, collectionname, operation, callback);
-				
-                if(connection && connection.close) {
-                    connection.close();
-                    connection = null;
-                }
+                killConnection(cnn, error);
                 return;
             }
-			
-            callback(null, collectionname ? new mongodb.Collection(connection, collectionname) : null, connection);
+
+            callback(null, collectionname ? new mongodb.Collection(connection, collectionname) : null, cnn);
         });
     });
 }
 
-/**
- * Puts a connection back in the pool.
- *
- * @param databasename Database configuration name
- * @param collection The collection name
- * @param connection The database connection
- */
-function returnConnection(databasename, connection) {
-	
-	if(!db.poolEnabled) {
-		killConnection(connection);
-		return;
-	}
-	
-	if(!connections[databasename]) {
-		connections[databasename] = [];
-	}
-	
-	if(connections[databasename].length > db.poolLimit) {
-		killConnection(connection);
-		return;
-	}
-	
-	connections[databasename].push(connection);
-}
-
-/**
- * Terminates a connection.  This is called whenever an error occurs.
- *
- * @param databasename Database configuration name
- * @param collection The collection name
- */
-function killConnection(connection) {
-	if(connection && connection.close) {
-		trace("closing connection to " + connection.databaseName + ": " + connection.state);
-		connection.close();
-		connection = null;
-	}
-}
-
 module.exports = db = {
-	
-	/**
-	 * Configuration settings
-	 */
-	poolEnabled: true,
-	cacheEnabled: true,
-	defaultCacheTime: 60,
-	poolLimit: 20,
-	
+
     /**
-     * Import your own connections collection
-	 *
+     * Configuration settings
+     * poolEnabled stores connections to be reused
+     * poolLimit the maximum number of connections to store
+     * cacheEnabled stores data from get, getAndCount and queries
+     * defaultCacheTime seconds to store cache data
+     * killEnabled destroys connections after up to 2x expireConnection depending on in use or not
+     * expireConnection how long to keep connections
+     */
+    poolEnabled: true,
+    cacheEnabled: true,
+    killEnabled: true,
+    defaultCacheTime: 60,
+    poolLimit: 20,
+    expireConnection: 30,
+
+    /**
+     * Import your own database collection
+     *
      * @param dblist Your databases:  { db1: { address: "", port: , name: "db1" }, ... }
      */
     setDatabases:function(dblist) {
         databases = dblist;
-		configureDatabases();
+        configureDatabases();
     },
 
     /**
@@ -172,23 +228,28 @@ module.exports = db = {
      * @param callback Your callback method(error, item)
      */
     insert: function(database, collectionname, options, callback) {
-        
-        getConnection(database, collectionname, "insert", function(error, collection, connection) {
+
+        getConnection(database, collectionname, "insert", function(error, collection, cnn) {
 
             collection.insert(options.doc, {safe: options.safe}, function(error, items) {
 
+                killConnection(cnn, error);
+
                 if(error) {
-					trace("insert error: " + error);
-                    killConnection(connection);
-					callback(error);
+
+                    trace("insert error: " + error);
+                    if(callback) {
+                        callback(error);
+                    }
+
                     return;
                 }
 
                 if(callback) {
                     callback(null, items.length > 0 ? items[0] : {});
                 }
-				
-				returnConnection(database, connection);
+
+                killConnection(cnn);
             });
         });
     },
@@ -203,9 +264,11 @@ module.exports = db = {
      */
     update: function(database, collectionname, options, callback) {
 
-        getConnection(database, collectionname, "update", function(error, collection, connection) {
+        getConnection(database, collectionname, "update", function(error, collection, cnn) {
 
             collection.update(options.filter, options.doc, {safe: options.safe || false, upsert: options.upsert || true}, function(error) {
+
+                killConnection(cnn, error);
 
                 if(callback) {
                     callback(error, error == null);
@@ -213,10 +276,7 @@ module.exports = db = {
 
                 if(error) {
                     trace("update error: " + error);
-                    killConnection(connection);
-                } else {
-					returnConnection(database, connection);
-				}
+                }
             });
         });
     },
@@ -230,7 +290,7 @@ module.exports = db = {
      * @param callback Your callback method(error, items)
      */
     get: function(database, collectionname, options, callback) {
-		
+
         if(options.cache) {
             var cached = cache.get(database, collectionname, "get", options);
 
@@ -240,20 +300,17 @@ module.exports = db = {
             }
         }
 
-        getConnection(database, collectionname, "get", function(error, collection, connection) {
+        getConnection(database, collectionname, "get", function(error, collection, cnn) {
 
             collection.find(options.filter || {}).limit(options.limit || 0).skip(options.skip || 0).sort(options.sort || {}).toArray(function (error, items) {
 
-                if(error) {
-					trace("get error: " + error);
-                    killConnection(connection);
-                } else {
-					returnConnection(database, connection);
+                killConnection(cnn, error);
 
-					if(options.cache) {
-	                    cache.set(database, collectionname, "get", options, items);
-	                }
-				}
+                if(error) {
+                    trace("get error: " + error);
+                } else if(options.cache) {
+                    cache.set(database, collectionname, "get", options, items);
+                }
 
                 if(callback) {
                     callback(error, items || []);
@@ -273,27 +330,33 @@ module.exports = db = {
      */
     getOrInsert: function(database, collectionname, options, callback) {
 
-        getConnection(database, collectionname, "getOrInsert", function(error, collection, connection) {
+        getConnection(database, collectionname, "getOrInsert", function(error, collection, cnn) {
 
             collection.find(options.filter).limit(1).toArray(function (error, items) {
 
                 if (error) {
 
+                    killConnection(cnn, error);
+
                     if(callback) {
                         callback(error, []);
                     }
 
-					trace("getOrInsert error: " + error);
-                    killConnection(connection);
+                    trace("getOrInsert error: " + error);
                     return;
                 }
 
+                // get it
                 if(items.length > 0) {
+                    killConnection(cnn, error);
                     callback(null, items[0]);
                     return;
                 }
 
+                // insert it
                 collection.insert(options.doc, {safe: options.safe || false}, function(error, item) {
+
+                    killConnection(cnn, error);
 
                     if(error) {
 
@@ -302,18 +365,15 @@ module.exports = db = {
                         }
 
                         trace("getOrInsert error2: " + error);
-                        killConnection(connection);
                         return;
                     }
 
                     if(callback) {
                         callback(null, item[0]);
                     }
-			
-					returnConnection(database, connection);
                 });
             });
-      });
+        });
     },
 
     /**
@@ -325,7 +385,7 @@ module.exports = db = {
      * @param callback Your callback method(error, items, numitems)
      */
     getAndCount: function(database, collectionname, options, callback) {
-		
+
         if(options.cache) {
             var cached = cache.get(database, collectionname, "getAndCount", options);
 
@@ -335,7 +395,7 @@ module.exports = db = {
             }
         }
 
-        getConnection(database, collectionname, "getAndCount", function(error, collection, connection) {
+        getConnection(database, collectionname, "getAndCount", function(error, collection, cnn) {
 
             if(error) {
 
@@ -344,7 +404,7 @@ module.exports = db = {
                 }
 
                 trace("getAndCount error: " + error);
-                killConnection(connection);
+                killConnection(cnn, error);
                 return;
             }
 
@@ -357,13 +417,15 @@ module.exports = db = {
                     }
 
                     trace("getAndCount error: " + error);
-                    killConnection(connection);
+                    killConnection(cnn, error);
                     return;
                 }
 
                 // note we could use the api here but it would potentially
                 // establish a second connection and change the cache key
                 collection.count(options.filter, function(error, numitems) {
+
+                    killConnection(cnn, error);
 
                     if (error) {
 
@@ -372,7 +434,6 @@ module.exports = db = {
                         }
 
                         trace("getAndCount error: " + error);
-                        killConnection(connection);
                         return;
                     }
 
@@ -383,8 +444,6 @@ module.exports = db = {
                     if(callback) {
                         callback(null, items, numitems);
                     }
-					
-					returnConnection(database, connection);
                 });
             });
         });
@@ -399,7 +458,7 @@ module.exports = db = {
      * @param callback Your callback method(error, numitems)
      */
     count: function(database, collectionname, options, callback) {
-		
+
         if(options.cache) {
             var cached = cache.get(database, collectionname, "count", options);
 
@@ -409,9 +468,11 @@ module.exports = db = {
             }
         }
 
-        getConnection(database, collectionname, "count", function(error, collection, connection) {
+        getConnection(database, collectionname, "count", function(error, collection, cnn) {
 
             collection.count(options.filter, function (error, numitems) {
+
+                killConnection(cnn, error);
 
                 if (error) {
                     if(callback) {
@@ -419,7 +480,6 @@ module.exports = db = {
                     }
 
                     trace("count error: " + error);
-                    killConnection(connection);
                     return;
                 }
 
@@ -430,8 +490,6 @@ module.exports = db = {
                 if(callback) {
                     callback(null, numitems);
                 }
-				
-				returnConnection(database, connection);
             });
         });
     },
@@ -446,8 +504,8 @@ module.exports = db = {
      */
     move: function(database, collection1name, collection2name, options, callback) {
 
-        getConnection(database, collection1name, "move", function(error, collection1, connection1) {
-			
+        getConnection(database, collection1name, "move", function(error, collection1, cnn1) {
+
             if(error) {
 
                 if(callback) {
@@ -455,58 +513,56 @@ module.exports = db = {
                 }
 
                 trace("move error: " + error);
-                killConnection(connection1);
+                killConnection(cnn1, error);
                 return;
             }
-			
-            getConnection(database, collection2name, "move", function(error, collection2, connection2) {
-				
-	            if(error) {
 
-	                if(callback) {
-	                    callback(error);
-	                }
+            getConnection(database, collection2name, "move", function(error, collection2, cnn2) {
 
-	                trace("remove error: " + error);
-	                killConnection(connection1);
-	                killConnection(connection2);
-	                return;
-	            }
-				
+                if(error) {
+
+                    if(callback) {
+                        callback(error);
+                    }
+
+                    trace("remove error: " + error);
+                    killConnection(cnn1);
+                    killConnection(cnn2, error);
+                    return;
+                }
+
                 collection2.update(options.doc, options.doc, {safe: options.safe || false, upsert: options.upsert || options.overwrite}, function(error) {
-					
-		            if(error) {
 
-		                if(callback) {
-		                    callback(error);
-		                }
+                    if(error) {
 
-		                trace("remove error: " + error);
-		                killConnection(connection1);
-			            killConnection(connection2);
-		                return;
-		            }
-					
+                        if(callback) {
+                            callback(error);
+                        }
+
+                        trace("remove error: " + error);
+                        killConnection(cnn1);
+                        killConnection(cnn2, error);
+                        return;
+                    }
+
                     collection1.remove(options.doc, function(error) {
-						
-			            if(error) {
 
-			                if(callback) {
-			                    callback(error, false);
-			                }
+                        killConnection(cnn1, error);
+                        killConnection(cnn2);
 
-			                trace("remove error: " + error);
-			                killConnection(connection1);
-			                killConnection(connection2);
-			                return;
-			            }
-						
-						if(callback) {
-							callback(null);
-						}
-						
-						returnConnection(database, connection1);
-						returnConnection(database, connection2);
+                        if(error) {
+
+                            if(callback) {
+                                callback(error, false);
+                            }
+
+                            trace("remove error: " + error);
+                            return;
+                        }
+
+                        if(callback) {
+                            callback(null);
+                        }
                     });
                 });
             });
@@ -522,8 +578,8 @@ module.exports = db = {
      */
     remove: function(database, collectionname, options, callback) {
 
-        getConnection(database, collectionname, "remove", function(error, collection, connection) {
-			
+        getConnection(database, collectionname, "remove", function(error, collection, cnn) {
+
             if(error) {
 
                 if(callback) {
@@ -531,22 +587,21 @@ module.exports = db = {
                 }
 
                 trace("remove error: " + error);
-                killConnection(connection);
+                killConnection(cnn, error);
                 return;
             }
-			
+
             collection.remove(options.filter, function(error) {
-				
-				if(error) {
+
+                killConnection(cnn, error);
+
+                if(error) {
                     trace("remove error: " + error);
-                    killConnection(connection);
-				} else {				
-					returnConnection(database, connection);
-				}
-				
-				if(callback) {
-	                callback(error, error == null);
-				}
+                }
+
+                if(callback) {
+                    callback(error, error == null);
+                }
             });
         });
     }
@@ -560,23 +615,23 @@ module.exports = db = {
 var cache = {
 
     get: function(databasename, collectionname, operation, options) {
-		
-		if(!db.cacheEnabled) { 
-			return null;
-		}
-		
-		var database = databases[databasename];
+
+        if(!db.cacheEnabled) {
+            return null;
+        }
+
+        var database = databases[databasename];
         var key = database.name + ":" + database.collectionname + ":" + operation + ":" + JSON.stringify(options);
         return localcache[key] ? localcache[key].data : null;
     },
 
     set: function(databasename, collectionname, operation, options, obj) {
-		
-		if(!db.cacheEnabled) {
-			return;
-		}
-		
-		var database = databases[databasename];
+
+        if(!db.cacheEnabled) {
+            return;
+        }
+
+        var database = databases[databasename];
         var key = database.name + ":" + database.collectionname + ":" + operation + ":" + JSON.stringify(options);
         localcache[key] = { data: obj, time: options.cachetime || db.defaultCacheTime};
     }
@@ -602,7 +657,7 @@ setInterval(function() {
  * Shorthand access to functions via db and collections
  */
 for(var databasename in databases) {
-    console.log(databasename);
+
     var dbn = databases[databasename].name;
     db[dbn] = databases[databasename];
     db[dbn].dbn = dbn;
@@ -655,9 +710,10 @@ for(var databasename in databases) {
         }
 
         var ddbn = this.dbn;
-		getConnection(ddbn, "", "", function(error, collection, connection) {
+        getConnection(ddbn, "", "", function(error, collection, cnn) {
 
             if(error) {
+                killConnection(cnn);
                 callback(error);
                 return;
             }
@@ -665,6 +721,7 @@ for(var databasename in databases) {
             connection.collectionNames({namesOnly: true}, function(error, names) {
 
                 if(error) {
+                    killConnection(cnn);
                     callback(error);
                     return;
                 }
@@ -681,8 +738,7 @@ for(var databasename in databases) {
                     db[ddbn].collection(dcdn);
                 }
 
-                connection.close();
-                connection = null;
+                killConnection(cnn);
                 callback(null);
             });
         });
@@ -698,7 +754,7 @@ for(var databasename in databases) {
 function configureDatabases() {
 
     for(var databasename in databases) {
-        console.log(databasename);
+
         var dbn = databases[databasename].name;
         db[dbn] = databases[databasename];
         db[dbn].dbn = dbn;
@@ -751,7 +807,7 @@ function configureDatabases() {
             }
 
             var ddbn = this.dbn;
-            getConnection(ddbn, "", "", function(error, collection, connection) {
+            getConnection(ddbn, "", "", function(error, collection, cnn) {
 
                 if(error) {
                     callback(error);
