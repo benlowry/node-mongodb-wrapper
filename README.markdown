@@ -1,10 +1,18 @@
 # Node MongoDB Wrapper
 
-This package greatly simplifies working with [MongoDB](http://mongodb.org/) and [Node MongoDB Native](https://github.com/mongodb/node-mongodb-native).
+This package greatly simplifies working with [MongoDB](http://mongodb.org/) and
+[Node MongoDB Native](https://github.com/mongodb/node-mongodb-native).
 
-It removes a lot of the callback madness and provides a simple shorthand for common operations.  This is in use in production at [Playtomic](https://playtomic.com/) as part of the high-volume [api server](https://success.heroku.com/playtomic).
+It removes a lot of the callback madness and provides a simple shorthand for
+common operations.  This is in use in production at [Playtomic](https://playtomic.com/) as part of 
+the high-volume [api server](https://success.heroku.com/playtomic).
 
-It has a rudimentary caching and connection pooling layer that can greatly minimize round trips to the database without introducing 3rd party dependencies, although both the cache and the pool are thread-specific so multiple instances/workers/whatever will each have their own.  The connection pooling force-kills connections after a while to make sure they really do get terminated.
+It has a rudimentary caching and connection pooling layer that can greatly
+minimize round trips to the database without introducing 3rd party
+dependencies, although both the cache and the pool are thread-specific so
+multiple instances/workers/whatever will each have their own.  The connection
+pooling force-kills connections after a while to make sure they really do get
+terminated.
 
 ## Requires
 
@@ -35,13 +43,14 @@ Node MongoDB Wrapper provides methods for:
 
 A complete suite of examples is available in the included test.js file.
 
-	db.get("test", "stuff", {filter: {x: 1, y: 2, z: 3}, cache: true, cachetime: 60}, function(error, items) {
+    var query = {filter: {x: 1, y: 2, z: 3}, cache: true, cachetime: 60};
+	db.get("test", "stuff", query, function(error, items) {
 	    console.log("huzzah!");
 	});
 	
 or (see shorthand note below)
 	
-	db.test.stuff.get({filter: {x: 1, y: 2, z: 3}, cache: true, cachetime: 60}, function(error, items) {
+	db.test.stuff.get(query, function(error, items) {
 		 console.log("huzzah!");
 	});
 	
@@ -57,27 +66,38 @@ In that short example "test" is one of our configured database's names:
 	    }
 	}
  
-We're passing an object that contains a nested filter object which is the query criteria and is exactly as you would use directly, it also supports limit, sort and skip in the outer object.  The query is marked as cacheable and will store the results for 60 seconds.
+We're passing an object that contains a nested filter object which is the query
+criteria and is exactly as you would use directly, it also supports limit, sort
+and skip in the outer object.  The query is marked as cacheable and will store
+the results for 60 seconds.
 
 ## Shorthand
 
-I saw this on [mongode](https://npmjs.org/package/mongode) and thought it looked super cool, so I copied the idea.
+I saw this on [mongode](https://npmjs.org/package/mongode) and thought it looked
+super cool, so I copied the idea.
 
-You can use traditional db.databasename.collectionname.method as well now to save on the parameter overload.  This also has the benefit of making sure your collection names are strict.
+You can use traditional db.databasename.collectionname.method as well now to save
+on the parameter overload.  This also has the benefit of making sure your 
+collection names are strict.
 
-The only bad bit is you have to predefine the collection names because JavaScript has no 'catch all' property which is unfortunate, but you can do it in 3 ways and if a collection is already defined it will just skip doing it again.
+The only bad bit is you have to predefine the collection names because JavaScript
+has no 'catch all' property which is unfortunate, but you can do it in 3 ways
+and if a collection is already defined it will just skip doing it again.
 
 	db.databasename.collection("acollection");
 	db.databasename.collections(["an", "array", "of", "collections"]);
 	db.databasename.collections(callback);
 	
-The final example will query your database and create the shorthand path for any collection names without dots (eg no system.indexes).
+The final example will query your database and create the shorthand path for any
+collection names without dots (eg no system.indexes).
 
-The callback has only an error parameter so you know if it worked or not, this is an async operation and you cannot use the shorthand until it is complete.	
+The callback has only an error parameter so you know if it worked or not, this is
+an async operation and you cannot use the shorthand until it is complete.	
 
 ## Databases
 
-You can either define your databases inside the included mongo-wrapper.js or pass a same-structured object as above via ```db.setDatabases(dblist)```.
+You can either define your databases inside the included mongo-wrapper.js or pass
+a same-structured object as above via ```db.setDatabases(dblist)```.
 
 ## Configuration
 You can enable or disable some functionality:
@@ -92,11 +112,13 @@ You can enable or disable some functionality:
 	db.poolEnabled = true;
 	db.poolLimit = 20;
 	
-	/*
-	Killing makes sure connections end up terminated.  I haven't figured out where yet but orphanned connections are not fun, so upon creation they're stored in an array now and each time they're used they have a timer reset, after which if they're still in use the timer will reset again the first time online or if they are not in use they'll be destroyed.
-	*/	
-	db.killEnabled = true;
-	db.expireConnection = 30;
+	// Killing makes sure connections end up terminated.  I haven't figured out
+	// where yet but orphanned connections are not fun, so upon creation they're
+	// stored in an array now and each time they're used they have a timer
+	// reset after which if they're still in use the timer will reset again the
+	// first time online or if they are not in use they'll be destroyed.
+	// db.killEnabled = true;
+	// db.expireConnection = 30;
 
 ## Why 
 
@@ -132,4 +154,6 @@ Because without this you end up with too much boilerplate and nesting:
 
 ### License
 
-Copyright [Playtomic Inc](https://playtomic.com), 2012.  Licensed under the MIT license.  Certain portions may come from 3rd parties and carry their own licensing terms and are referenced where applicable.
+Copyright [Playtomic Inc](https://playtomic.com), 2012.  Licensed under the MIT
+ license.  Certain portions may come from 3rd parties and carry their own 
+ licensing terms and are referenced where applicable.
