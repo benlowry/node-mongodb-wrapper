@@ -1,8 +1,8 @@
 { "name" :            "node-mongodb-wrapper"
 , "description" :     "A simplified interface for MongoDB"
 , "keywords" :        ["mongodb", "mongo", "wrapper", "db"]
-, "version" :         "0.0.12"
-, "author" :          "Playtomic Inc"
+, "version" :         "0.0.13"
+, "author" :          "Ben Lowry @ https://github.com/benlowry"
 , "repository" :    { "type" :  "git"
                     , "url" :   "http://github.com/benlowry/node-mongodb-wrapper.git" }
 , "dependencies" : {
