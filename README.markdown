@@ -7,12 +7,9 @@ It removes a lot of the callback madness and provides a simple shorthand for
 common operations.  This is in use in production at [Playtomic](https://playtomic.com/) as part of 
 the high-volume [api server](https://success.heroku.com/playtomic).
 
-It has a rudimentary caching and connection pooling layer that can greatly
-minimize round trips to the database without introducing 3rd party
-dependencies, although both the cache and the pool are thread-specific so
-multiple instances/workers/whatever will each have their own.  The connection
-pooling force-kills connections after a while to make sure they really do get
-terminated.
+It has a rudimentary caching layer that can greatly minimize round trips to the 
+database without introducing 3rd party dependencies, although  the cache 
+is thread-specific so multiple instances/workers/whatever will each have their own. 
 
 ## Requires
 
@@ -22,7 +19,7 @@ terminated.
 ## How to use
 1. git clone https://github.com/benlowry/node-mongodb-wrapper
 2. cd node-mongodb-wrapper
-3. node test.js
+3. see tests for examples
 
 or just ```npm install node-mongodb-wrapper```
 
@@ -33,6 +30,8 @@ Node MongoDB Wrapper provides methods for:
 1. ```get``` performs a find() with optional caching
 2. ```getAndCount``` performs a find() + count() with optional caching
 3. ```getOrInsert``` performs a find() and inserts if not exists
+4. ```aggregate``` performs an aggregate()
+5. ```aggregateAndCount```, performs an aggregate and a second aggregate for counting
 4. ```count``` performs a count() with optional caching
 5. ```insert``` performs a save()
 6. ```update``` performs an update()
@@ -107,18 +106,6 @@ You can enable or disable some functionality:
 	// caching lets you store  results from get, getAndCount, count ops
 	db.cacheEnabled = true;
 	db.defaultCacheTime = 60;
-	
-	// pooling stores connections to be reused
-	db.poolEnabled = true;
-	db.poolLimit = 20;
-	
-	// Killing makes sure connections end up terminated.  I haven't figured out
-	// where yet but orphanned connections are not fun, so upon creation they're
-	// stored in an array now and each time they're used they have a timer
-	// reset after which if they're still in use the timer will reset again the
-	// first time online or if they are not in use they'll be destroyed.
-	// db.killEnabled = true;
-	// db.expireConnection = 30;
 
 ## Why 
 
@@ -154,6 +141,6 @@ Because without this you end up with too much boilerplate and nesting:
 
 ### License
 
-Copyright [Playtomic Inc](https://playtomic.com), 2012.  Licensed under the MIT
- license.  Certain portions may come from 3rd parties and carry their own 
- licensing terms and are referenced where applicable.
+Copyright Ben Lowry 2012.  Licensed under the MIT license.  Certain portions 
+may come from 3rd parties and carry their own licensing terms and are 
+referenced where applicable.
