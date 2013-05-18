@@ -26,7 +26,7 @@ var databases = {
  */
 function trace(message) {
 
-    if(!trace) {
+    if(!debug) {
         return;
     }
 
@@ -40,88 +40,17 @@ function trace(message) {
  */
 function killConnection(cnn, error) {
 
-    cnn.inuse = false;
-
     // disposed of after we terminated it
     if(!cnn.connection || !cnn.db) {
         cnn = null;
         return;
     }
 
-    if(!error && module.exports.poolEnabled && cnn.db && cnn.connection) {
-
-        var database = databases[cnn.databasename];
-
-        if(!database.pool) {
-            cnn.expire = 30;
-            database.pool = [cnn];
-            return;
-        }
-
-        if(database.pool.length < module.exports.poolSize) {
-            cnn.expire = 30;
-            database.pool.push(cnn);
-            return;
-        }
-    }
-
     cnn.connection.close();
-    cnn.db.close();
     cnn.connection = null;
-    cnn.db = null;
-    delete(cnn.connection);
-    delete(cnn.db);
     cnn = null;
     return;
 }
-
-/**
- * Pool cleaning
- */
-setInterval(function() {
-
-    if(!module.exports.poolEnabled && !module.exports.killEnabled)
-        return;
-
-    for(var i=allconnections.length - 1; i>-1; i--) {
-
-        var cnn = allconnections[i];
-        cnn.expire--;
-
-        if(cnn.expire > 0) {
-            continue;
-        }
-
-        if(cnn.inuse) {
-            cnn.inuse = false;
-            cnn.expire = module.exports.expireConnection;
-            continue;
-        }
-
-        // remove from global pool
-        allconnections.splice(i, 1);
-
-        // remove from database pool
-        var db = databases[cnn.databasename];
-
-        if(db.pool && db.pool.length) {
-            var dbp = db.pool.indexOf(cnn);
-
-            if(dbp > -1) {
-                db.pool.splice(dbp, 1);
-            }
-        }
-
-        // close it
-        cnn.connection.close();
-        cnn.connection = null;
-        cnn.db.close();
-        cnn.db = null;
-        delete(cnn.connection);
-        delete(cnn.db);
-        cnn = null;
-    }
-}, 1000);
 
 /**
  * Nice and simple persistant connections.  If your application runs on
@@ -136,21 +65,6 @@ setInterval(function() {
 function getConnection(databasename, collectionname, operation, callback) {
 
     var database = databases[databasename];
-
-    if(module.exports.poolEnabled && database.pool && database.pool.length) {
-
-        var cnn = database.pool.pop();
-
-        if(cnn.connection.state == "connected") {
-            cnn.expire = module.exports.expireConnection;
-            cnn.inuse = true;
-            callback(null, collectionname ? new mongodb.Collection(cnn.connection, collectionname) : null, cnn);
-            return;
-        } else {
-           killConnection(cnn, false);
-        }
-    }
-
     var options = {
         slave_ok: true
     };
@@ -158,11 +72,11 @@ function getConnection(databasename, collectionname, operation, callback) {
     var db = new mongodb.Db(database.name, new mongodb.Server(database.address, database.port, options));
     db.open(function (error, connection) {
 
-        var cnn = {connection: connection, db: db, databasename: databasename, expire: module.exports.expireConnection, inuse: true};
-
-        if(module.exports.killEnabled) {
-            allconnections.push(cnn);
-        }
+        var cnn = {
+			connection: connection, 
+			db: db,
+			databasename: databasename
+		};
 
         if(error) {
             trace("connection failed to " + databasename + ": "+ error);
@@ -195,19 +109,11 @@ module.exports = db = {
 
     /**
      * Configuration settings
-     * poolEnabled stores connections to be reused
-     * poolLimit the maximum number of connections to store
      * cacheEnabled stores data from get, getAndCount and queries
      * defaultCacheTime seconds to store cache data
-     * killEnabled destroys connections after up to 2x expireConnection depending on in use or not
-     * expireConnection how long to keep connections
      */
-    poolEnabled: true,
     cacheEnabled: true,
-    killEnabled: true,
     defaultCacheTime: 60,
-    poolLimit: 20,
-    expireConnection: 30,
 
     /**
      * Import your own database collection
@@ -448,6 +354,135 @@ module.exports = db = {
             });
         });
     },
+	
+    /**
+     * Aggregates a collection
+     *
+     * @param database Database config name
+     * @param collectionname The collection name
+     * @param options { aggregate: [pipeline], cache: false, cachetime: 60 }
+     * @param callback Your callback method(error, items, numitems)
+     */
+    aggregate: function(database, collectionname, options, callback) {
+
+        if(options.cache) {
+            var cached = cache.get(database, collectionname, "aggregate", options);
+
+            if(cached) {
+                callback(null, cached.items);
+                return;
+            }
+        }
+
+        getConnection(database, collectionname, "aggregate", function(error, collection, cnn) {
+
+            if(error) {
+
+                if(callback) {
+                    callback(error, []);
+                }
+
+                trace("aggregate error: " + error);
+                killConnection(cnn, error);
+                return;
+            }
+
+            collection.aggregate(options.aggregate).toArray(function (error, items) {
+
+                if (error) {
+
+                    if(callback) {
+                        callback(error, []);
+                    }
+
+                    trace("aggregate error: " + error);
+                    killConnection(cnn, error);
+                    return;
+                }
+
+                if(callback) {
+                    callback(null, items);
+                }
+            });
+        });
+    },
+	
+    /**
+     * Aggregates and counts the total number of aggregated reuslts
+     *
+     * @param database Database config name
+     * @param collectionname The collection name
+     * @param options { aggregate: [pipeline], count: [pipeline], cache: false, cachetime: 60 }
+     * @param callback Your callback method(error, items, numitems)
+     */
+    aggregateAndCount: function(database, collectionname, options, callback) {
+
+        if(options.cache) {
+            var cached = cache.get(database, collectionname, "aggregateAndCount", options);
+
+            if(cached) {
+                callback(null, cached.items, cached.numitems);
+                return;
+            }
+        }
+
+        getConnection(database, collectionname, "aggregateAndCount", function(error, collection, cnn) {
+
+            if(error) {
+
+                if(callback) {
+                    callback(error, [], 0);
+                }
+
+                trace("aggregateAndCount error: " + error);
+                killConnection(cnn, error);
+                return;
+            }
+
+            collection.aggregate(options.aggregate, function (error, items) {
+
+                if (error) {
+					
+					console.log("aggregate failed");
+					console.log(JSON.stringify(options, null, "\t"));
+					console.log("error: " + error);
+
+                    if(callback) {
+                        callback(error, [], 0);
+                    }
+
+                    trace("aggregateAndCount error: " + error);
+                    killConnection(cnn, error);
+                    return;
+                }
+
+                collection.aggregate(options.count, function(error, numitems) {
+
+                    killConnection(cnn, error);
+
+                    if (error) {
+
+                        if(callback) {
+                            callback(error, [], 0);
+                        }
+
+                        trace("aggregateAndCount error: " + error);
+                        return;
+                    }
+					
+					numitems = numitems[0].count;
+
+                    if(options.cache) {
+                        cache.set(database, collectionname, "aggregateAndCount", options, {items: items, numitems: numitems});
+                    }
+					
+                    if(callback) {
+                        callback(null, items, numitems);
+                    }
+                });
+            });
+        });
+    },
 
     /**
      * Counts the number of items matching a query
@@ -530,41 +565,89 @@ module.exports = db = {
                     killConnection(cnn2, error);
                     return;
                 }
+				
+				collection2.find(options.doc).toArray(function(error, items) {
 
-                collection2.update(options.doc, options.doc, {safe: options.safe || false, upsert: options.upsert || options.overwrite}, function(error) {
-
-                    if(error) {
-
+					if(error) {
                         if(callback) {
                             callback(error);
                         }
-
-                        trace("remove error: " + error);
+						trace("move error: " + error);
                         killConnection(cnn1);
                         killConnection(cnn2, error);
-                        return;
-                    }
+						return;						
+					}
+					
+					if(items && items.length) {
+						
+						var item = items[0];
+					
+						if(item && !options.overwrite && !options.upsert) {
+							if(callback) {
+								callback("Document exists in destination collection");
+							}
+						
+							trace("move error: document exists in destination collection");
+	                        killConnection(cnn1);
+	                        killConnection(cnn2, error);
+							return;
+						}
+					
+						else if(item) {
+							options.doc._id = item._id;
+						}
+					} else {
+					
+						collection2.insert(options.doc, function(error) {
+		                    
+							if(error) {
+		                        trace("remove error: " + error);
+		                        killConnection(cnn1);
+		                        killConnection(cnn2, error);
+		                    }
 
-                    collection1.remove(options.doc, function(error) {
+							callback(error);
+							
+						});
+						
+						return;
+					}
+						
+	                collection2.update(options.doc, options.doc, {safe: options.safe || false, upsert: options.upsert || options.overwrite}, function(error) {
 
-                        killConnection(cnn1, error);
-                        killConnection(cnn2);
+	                    if(error) {
 
-                        if(error) {
+	                        if(callback) {
+	                            callback(error);
+	                        }
 
-                            if(callback) {
-                                callback(error, false);
-                            }
+	                        trace("remove error: " + error);
+	                        killConnection(cnn1);
+	                        killConnection(cnn2, error);
+	                        return;
+	                    }
 
-                            trace("remove error: " + error);
-                            return;
-                        }
+	                    collection1.remove(options.doc, function(error) {
 
-                        if(callback) {
-                            callback(null);
-                        }
-                    });
-                });
+	                        killConnection(cnn1, error);
+	                        killConnection(cnn2);
+
+	                        if(error) {
+
+	                            if(callback) {
+	                                callback(error, false);
+	                            }
+
+	                            trace("remove error: " + error);
+	                            return;
+	                        }
+
+	                        if(callback) {
+	                            callback(null);
+	                        }
+	                    });
+	                });
+				});
             });
         })
     },
@@ -654,37 +737,71 @@ setInterval(function() {
 }, 1000);
 
 /*
- * Shorthand access to functions via db and collections
+ * Creates the shorthand references to databases and provides methods
+ * for including shorthand collection paths too.  You don't need to call
+ * this manually, it will automatically apply to the locally defined
+ * list of databases, or run again if you pass your own configuration.
  */
-for(var databasename in databases) {
+function configureDatabases() {
+    for(var databasename in databases) {
+		configureDatabase(databasename);
+	}
+}
 
-    var dbn = databases[databasename].name;
-    db[dbn] = databases[databasename];
-    db[dbn].dbn = dbn;
+configureDatabases();
+
+function configureDatabase(databasename) {
+	
+	var alias = databasename;
+	
+	if(databases[databasename].alias) {
+		alias = databases[databasename].alias;
+	}
+    
+	db[alias] = databases[databasename];
+	db[alias].databasename = databasename;
 
     /**
-     * Initializes a single collection's shorthand
-     * @param cdn the collection name
+     * Initializes a collection's shorthand methods for accessing
+	 * via db.databasename.collectionname.method(..)
+     * @param collectionname the collection name
      */
-    db[dbn].collection = function(cdn) {
+    db[alias].collection = function(collectionname) {
 
-        var ddbn = this.dbn;
-
-        if(db[this.dbn][cdn]) {
-            return;
-        }
-
-        db[ddbn][cdn] = {};
-        db[ddbn][cdn].cdn = cdn;
-        db[ddbn][cdn].dbn = ddbn;
-        db[ddbn][cdn].get = function(options, callback) { db.get(this.dbn, this.cdn, options, callback); }
-        db[ddbn][cdn].getOrInsert = function(options, callback) { db.getOrInsert(this.dbn, this.cdn, options, callback); }
-        db[ddbn][cdn].getAndCount = function(options, callback) { db.getAndCount(this.dbn, this.cdn, options, callback); }
-        db[ddbn][cdn].count = function(options, callback) { db.count(this.dbn, this.cdn, options, callback); }
-        db[ddbn][cdn].move = function(collection2name, options, callback) { db.move(this.dbn, this.cdn, collection2name, options, callback); }
-        db[ddbn][cdn].update = function(options, callback) { db.update(this.dbn, this.cdn, options, callback) };
-        db[ddbn][cdn].insert = function(options, callback) { db.insert(this.dbn, this.cdn, options, callback) };
-        db[ddbn][cdn].remove = function(options, callback) { db.remove(this.dbn, this.cdn, options, callback); }
+        var databasename = this.databasename;
+		
+        db[databasename][collectionname] = {
+			get: function(options, callback) { 
+				db.get(databasename, collectionname, options, callback); 
+			},
+			getOrInsert: function(options, callback) { 
+				db.getOrInsert(databasename, collectionname, options, callback); 
+			},
+			getAndCount: function(options, callback) { 
+				db.getAndCount(databasename, collectionname, options, callback); 
+			},
+			count: function(options, callback) { 
+				db.count(databasename, collectionname, options, callback); 
+			},
+			move: function(collection2name, options, callback) { 
+				db.move(databasename, collectionname, collection2name, options, callback); 
+			},
+			update: function(options, callback) { 
+				db.update(databasename, collectionname, options, callback); 
+			},
+			insert: function(options, callback) { 
+				db.insert(databasename, collectionname, options, callback); 
+			},
+			remove: function(options, callback) { 
+				db.remove(databasename, collectionname, options, callback); 
+			},
+			aggregate: function(options, callback) { 
+				db.aggregate(databasename, collectionname, options, callback); 
+			},
+			aggregateAndCount: function(options, callback) { 
+				db.aggregateAndCount(databasename, collectionname, options, callback); 
+			}
+		}
     };
 
     /**
@@ -692,36 +809,35 @@ for(var databasename in databases) {
      * @param opt either an array of collection names or a callback method(error) for
      * loading directly from the db
      */
-    db[dbn].collections = function(opt) {
+    db[alias].collections = function(opt) {
 
         var callback;
+		var databasename = this.databasename;
 
+		// received an array of collections
         if(opt) {
 
             if(typeof opt === 'function') {
                 callback = opt;
             } else {
                 for(var i=0; i<opt.length; i++) {
-                    this.collection(opt[i]);
+                    db[databasename].collection(opt[i]);
                 }
-
                 return;
             }
         }
 
-        var ddbn = this.dbn;
-        getConnection(ddbn, "", "", function(error, collection, cnn) {
+		// look up the collections
+        getConnection(databasename, "", "", function(error, collection, connection) {
 
             if(error) {
-                killConnection(cnn);
                 callback(error);
                 return;
             }
-
-            connection.collectionNames({namesOnly: true}, function(error, names) {
+			
+            connection.db.collectionNames({namesOnly: true}, function(error, names) {
 
                 if(error) {
-                    killConnection(cnn);
                     callback(error);
                     return;
                 }
@@ -730,116 +846,17 @@ for(var databasename in databases) {
 
                     var name = names[i];
 
-                    if(name.indexOf(ddbn + ".system.") == 0)
+                    if(name.indexOf(databasename + ".system.") == 0)
                         continue;
 
-                    var dcdn = name.substring(ddbn.length + 1);
-
-                    db[ddbn].collection(dcdn);
+                    var collectionname = name.substring(databasename.length + 1);
+                    db[databasename].collection(collectionname);
                 }
 
-                killConnection(cnn);
+                connection.db.close();
+                connection = null;
                 callback(null);
             });
         });
     }
 }
-
-/*
- * Creates the shorthand references to databases and provides methods
- * for including shorthand collection paths too.  You don't need to call
- * this manually, it will automatically apply to the locally defined
- * list of databases, or run again if you pass your own configuration.
- */
-function configureDatabases() {
-
-    for(var databasename in databases) {
-
-        var dbn = databases[databasename].name;
-        db[dbn] = databases[databasename];
-        db[dbn].dbn = dbn;
-
-        /**
-         * Initializes a single collection's shorthand
-         * @param cdn the collection name
-         */
-        db[dbn].collection = function(cdn) {
-
-            var ddbn = this.dbn;
-
-            if(db[this.dbn][cdn]) {
-                return;
-            }
-
-            db[ddbn][cdn] = {};
-            db[ddbn][cdn].cdn = cdn;
-            db[ddbn][cdn].dbn = ddbn;
-            db[ddbn][cdn].get = function(options, callback) { db.get(this.dbn, this.cdn, options, callback); }
-            db[ddbn][cdn].getOrInsert = function(options, callback) { db.getOrInsert(this.dbn, this.cdn, options, callback); }
-            db[ddbn][cdn].getAndCount = function(options, callback) { db.getAndCount(this.dbn, this.cdn, options, callback); }
-            db[ddbn][cdn].count = function(options, callback) { db.count(this.dbn, this.cdn, options, callback); }
-            db[ddbn][cdn].move = function(collection2name, options, callback) { db.move(this.dbn, this.cdn, collection2name, options, callback); }
-            db[ddbn][cdn].update = function(options, callback) { db.update(this.dbn, this.cdn, options, callback) };
-            db[ddbn][cdn].insert = function(options, callback) { db.insert(this.dbn, this.cdn, options, callback) };
-            db[ddbn][cdn].remove = function(options, callback) { db.remove(this.dbn, this.cdn, options, callback); }
-        };
-
-        /**
-         * Initializes the collection shorthand on a database
-         * @param opt either an array of collection names or a callback method(error) for
-         * loading directly from the db
-         */
-        db[dbn].collections = function(opt) {
-
-            var callback;
-
-            if(opt) {
-
-                if(typeof opt === 'function') {
-                    callback = opt;
-                } else {
-                    for(var i=0; i<opt.length; i++) {
-                        this.collection(opt[i]);
-                    }
-
-                    return;
-                }
-            }
-
-            var ddbn = this.dbn;
-            getConnection(ddbn, "", "", function(error, collection, cnn) {
-
-                if(error) {
-                    callback(error);
-                    return;
-                }
-
-                connection.collectionNames({namesOnly: true}, function(error, names) {
-
-                    if(error) {
-                        callback(error);
-                        return;
-                    }
-
-                    for(var i=0; i<names.length; i++) {
-
-                        var name = names[i];
-
-                        if(name.indexOf(ddbn + ".system.") == 0)
-                            continue;
-
-                        var dcdn = name.substring(ddbn.length + 1);
-
-                        db[ddbn].collection(dcdn);
-                    }
-
-                    connection.close();
-                    connection = null;
-                    callback(null);
-                });
-            });
-        }
-    }
-}
-
-configureDatabases();
