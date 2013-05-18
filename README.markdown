@@ -4,8 +4,8 @@ This package greatly simplifies working with [MongoDB](http://mongodb.org/) and
 [Node MongoDB Native](https://github.com/mongodb/node-mongodb-native).
 
 It removes a lot of the callback madness and provides a simple shorthand for
-common operations.  This is in use in production at [Playtomic](https://playtomic.com/) as part of 
-the high-volume [api server](https://success.heroku.com/playtomic).
+common operations.  This was used in production at [Playtomic](https://playtomic.org/) 
+as part of a high-volume [api server](https://github.com/playtomic/apiserver).
 
 It has a rudimentary caching layer that can greatly minimize round trips to the 
 database without introducing 3rd party dependencies, although  the cache 
